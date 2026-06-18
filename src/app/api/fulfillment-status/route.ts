@@ -12,7 +12,18 @@ export async function GET(request: Request) {
     );
   }
 
-  const record = getFulfillmentBySessionId(sessionId);
+  let record: Awaited<ReturnType<typeof getFulfillmentBySessionId>>;
+
+  try {
+    record = await getFulfillmentBySessionId(sessionId);
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load fulfillment status.";
+
+    return NextResponse.json({ status: "error", error: message }, { status: 500 });
+  }
 
   if (!record) {
     return NextResponse.json({ status: "not_found" });
@@ -23,6 +34,6 @@ export async function GET(request: Request) {
     sessionId: record.sessionId,
     productId: record.productId,
     fulfilledAt: record.fulfilledAt,
-    downloadUrl: record.downloadUrl,
+    downloadUrl: `/api/download?session_id=${encodeURIComponent(record.sessionId)}`,
   });
 }

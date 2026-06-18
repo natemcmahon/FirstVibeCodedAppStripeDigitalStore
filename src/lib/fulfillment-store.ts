@@ -1,41 +1,81 @@
+import { prisma } from "@/lib/db";
+
 export type FulfillmentRecord = {
   sessionId: string;
   productId: string;
   fulfilledAt: string;
-  downloadUrl: string;
+  assetRelativePath: string;
   status: "fulfilled";
 };
 
-const fulfillmentBySessionId = new Map<string, FulfillmentRecord>();
-
-function createMockDownloadUrl(productId: string): string {
-  return `/downloads/mock-${productId}.zip`;
-}
-
-export function markFulfilled(
-  sessionId: string,
-  productId: string
-): FulfillmentRecord {
-  const existing = fulfillmentBySessionId.get(sessionId);
-
-  if (existing) {
-    return existing;
+function getAssetRelativePathForProduct(productId: string): string {
+  if (productId === "starter-pack") {
+    return "downloads/starter-pack.txt";
   }
 
-  const record: FulfillmentRecord = {
-    sessionId,
-    productId,
-    fulfilledAt: new Date().toISOString(),
-    downloadUrl: createMockDownloadUrl(productId),
-    status: "fulfilled",
-  };
-
-  fulfillmentBySessionId.set(sessionId, record);
-  return record;
+  throw new Error("No downloadable asset configured for product.");
 }
 
-export function getFulfillmentBySessionId(
+function assertDatabaseUrl(): void {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("Missing DATABASE_URL environment variable.");
+  }
+}
+
+function mapFromDbRecord(record: {
+  sessionId: string;
+  productId: string;
+  fulfilledAt: Date;
+  assetRelativePath: string;
+  status: string;
+}): FulfillmentRecord {
+  if (record.status !== "fulfilled") {
+    throw new Error("Unexpected fulfillment status returned from database.");
+  }
+
+  return {
+    sessionId: record.sessionId,
+    productId: record.productId,
+    fulfilledAt: record.fulfilledAt.toISOString(),
+    assetRelativePath: record.assetRelativePath,
+    status: "fulfilled",
+  };
+}
+
+export async function markFulfilled(
+  sessionId: string,
+  productId: string
+): Promise<FulfillmentRecord> {
+  assertDatabaseUrl();
+
+  const now = new Date();
+  const record = await prisma.fulfillment.upsert({
+    where: { sessionId },
+    update: {},
+    create: {
+      sessionId,
+      productId,
+      fulfilledAt: now,
+      assetRelativePath: getAssetRelativePathForProduct(productId),
+      status: "fulfilled",
+    },
+  });
+
+  return mapFromDbRecord(record);
+}
+
+export async function getFulfillmentBySessionId(
   sessionId: string
-): FulfillmentRecord | null {
-  return fulfillmentBySessionId.get(sessionId) ?? null;
+): Promise<FulfillmentRecord | null> {
+  assertDatabaseUrl();
+
+  const record = await prisma.fulfillment.findUnique({
+    where: { sessionId },
+  });
+
+  if (!record) {
+    return null;
+  }
+
+  return mapFromDbRecord(record);
 }

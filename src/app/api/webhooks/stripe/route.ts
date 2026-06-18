@@ -65,6 +65,16 @@ export async function POST(request: Request) {
     );
   }
 
-  markFulfilled(sessionId, productId);
+  try {
+    await markFulfilled(sessionId, productId);
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to persist fulfillment state.";
+
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+
   return NextResponse.json({ received: true });
 }
